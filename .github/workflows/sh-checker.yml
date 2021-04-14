@@ -1,0 +1,15 @@
+name: sh-check
+on:
+  - pull_request
+jobs:
+  sh-checker:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v1
+      - name: Run the sh-checker
+        uses: luizm/action-sh-checker@v0.1.13
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHFMT_OPTS: -s # arguments to shfmt.
+        with:
+          sh_checker_comment: true
