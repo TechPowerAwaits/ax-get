@@ -1,0 +1,4 @@
+axelor-*
+*.war
+*.zip
+__pycache__
