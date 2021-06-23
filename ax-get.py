@@ -1,3 +1,5 @@
+#!/usr/bin/env python3
+
 # Copyright 2021 Richard Johnston <techpowerawaits@outlook.com>
 # SPDX-license-identifier: 0BSD
 
@@ -12,8 +14,6 @@ import time
 import zipfile
 
 PAUSE_SECONDS = 3
-
-current_path = os.path.dirname(__file__)
 __version__ = "1.0.0"
 
 # Source code wise, Axelor Open Suite depends on Axelor Open Webapp.
@@ -34,8 +34,8 @@ default_openwebapp_war_url = (
 default_war_basename = "axelor-erp-v"
 
 parser = argparse.ArgumentParser(
-    description="Grabs a copy of Axelor",
-    epilog="Licensed under the 0BSD.")
+    description="Grabs a copy of Axelor", epilog="Licensed under the 0BSD."
+)
 parser.add_argument("-v", "--version", action="version", version=__version__)
 parser.add_argument("-s", "--src", action="store_true")
 parser.add_argument("major", help="Major version number")
@@ -90,7 +90,7 @@ if is_src:
             opensuite_src_fp.write(content)
     with zipfile.ZipFile(opensuite_src_zip_name, "r") as opensuite_src_zip:
         opensuite_src_dest = os.path.join(
-            current_path, openwebapp_src_folder_name, "modules", "axelor-open-suite"
+            openwebapp_src_folder_name, "modules", "axelor-open-suite"
         )
         opensuite_src_zip.extractall(os.path.dirname(opensuite_src_dest))
         if os.path.exists(opensuite_src_dest):
