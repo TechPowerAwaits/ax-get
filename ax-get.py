@@ -7,12 +7,22 @@ import argparse
 import os
 import requests
 import shutil
+import sys
 
 # So the instructions have a bit
 # of a breather between them.
 import time
 import zipfile
 
+# Add POSIX support (for becoming root and chowning).
+import posix_compat
+
+DIR_ERROR_CODE = 1
+PERMISSION_ERROR_CODE = 2
+INVALID_TYPE_ERROR_CODE = 3
+INVALID_INPUT = 4
+
+DEFAULT_BRANDING_FILE = "branding_logo.png"
 PAUSE_SECONDS = 3
 __version__ = "1.0.0"
 
@@ -38,17 +48,93 @@ parser = argparse.ArgumentParser(
 )
 parser.add_argument("-v", "--version", action="version", version=__version__)
 parser.add_argument("-s", "--src", action="store_true")
+parser.add_argument(
+    "-b", "--brand_file", default=DEFAULT_BRANDING_FILE, help="Path to logo"
+)
+parser.add_argument("-o", "--out", default=os.path.curdir, help="Output directory")
 parser.add_argument("major", help="Major version number")
 parser.add_argument("minor", help="Minor version number")
 parser.add_argument("patch", help="Patch version number")
 parser_args = parser.parse_args()
+
+# Deal with the version numbers.
 is_src = parser_args.src
 major_ver = parser_args.major
 minor_ver = parser_args.minor
 patch_ver = parser_args.patch
 ax_ver_str = major_ver + "." + minor_ver + "." + patch_ver
 
+# On POSIX-like platforms, the WAR file content should be
+# chowned for the tomcat user and group. Source code files
+# shouldn't be chowned.
+chownable = False
+tomcat_tuple = posix_compat.get_tomcat_info()
+if os.name == "posix" and not is_src:
+    if tomcat_tuple.name is not None:
+        if posix_compat.make_root():
+            chownable = True
+        else:
+            print(
+                "Warning: Downloaded Axelor content cannot be chowned.", file=sys.stderr
+            )
+
+# Start dealing with output_dir before brand_file,
+# for the latter might be relative, and thus, depend
+# on the current location of output_dir.
+output_dir = os.path.abspath(parser_args.out)
+# Check if directory exists.
+if not os.access(output_dir, os.F_OK):
+    print(f"FE: Directory {output_dir} does not exist.", file=sys.stderr)
+    sys.exit(DIR_ERROR_CODE)
+# Check if the script needs to become root.
+if os.name == "posix" and not os.access(output_dir, os.R_OK ^ os.W_OK):
+    if not posix_compat.make_root():
+        print(f"FE: No permissions to access {output_dir}.", file=sys.stderr)
+        sys.exit(PERMISSION_ERROR_CODE)
+os.chdir(output_dir)
+
+brand_file = parser_args.brand_file
+if not os.path.isabs(brand_file):
+    brand_file = os.path.abspath(brand_file)
+# Check if brand_file exists and is of a valid type
+# (not a directory or symlink).
+use_brand_file = True
+if not os.path.isfile(brand_file):
+    use_brand_file = False
+    if os.path.exists(brand_file):
+        print(f"FE: The path {brand_file} is not a file.")
+        sys.exit(INVALID_TYPE_ERROR_CODE)
+    else:
+        # Only error out if it is a user defined
+        # brand_file that doesn't exist.
+        if not brand_file == os.path.abspath(DEFAULT_BRANDING_FILE):
+            print(f"FE: Given brand file of {brand_file} is invalid.")
+            sys.exit(INVALID_INPUT)
+# Try to get permission to copy (read) brand_file.
+if use_brand_file and os.name == "posix" and not os.access(brand_file, os.R_OK):
+    if not posix_compat.make_root():
+        print(f"Warning: Cannot read {brand_file}.", file=sys.stderr)
+brand_filename = os.path.basename(brand_file)
+
+# The downloaded and extracted opensuite folder will
+# be placed inside a renamed openwebapp folder and that will
+# become the end result. The *zip_name variables are temporary
+# names assigned to the zip files downloaded, while the *folder_name
+# variables are what the extracted folder is temporarily called.
+# The final folder name for the end result is src_folder_name.
 opensuite_src_url = default_opensuite_src_url + ax_ver_str + ".zip"
+opensuite_src_folder_name = "axelor-open-suite-" + ax_ver_str
+opensuite_src_zip_name = "opensuite_src.zip"
+openwebapp_src_url = default_openwebapp_src_url + ax_ver_str + ".zip"
+openwebapp_src_folder_name = "open-suite-webapp-" + ax_ver_str
+openwebapp_src_zip_name = "openwebapp_src.zip"
+src_folder_name = "axelor-v" + ax_ver_str + "-src"
+
+# Unlike when downloading the source code, both URLs aren't required
+# when downloading the WAR file. Rather, it attempts to download from the
+# opensuite_war_url first before falling back to the openwebapp_war_url.
+# war_name is the temporary name assigned to the downloaded WAR file,
+# while war_folder_name is what the final extracted product is renamed to.
 opensuite_war_url = (
     default_opensuite_war_url
     + ax_ver_str
@@ -57,9 +143,6 @@ opensuite_war_url = (
     + ax_ver_str
     + ".war"
 )
-opensuite_src_zip_name = "opensuite_src.zip"
-opensuite_src_folder_name = "axelor-open-suite-" + ax_ver_str
-openwebapp_src_url = default_openwebapp_src_url + ax_ver_str + ".zip"
 openwebapp_war_url = (
     default_openwebapp_war_url
     + ax_ver_str
@@ -68,26 +151,47 @@ openwebapp_war_url = (
     + ax_ver_str
     + ".war"
 )
-openwebapp_src_folder_name = "open-suite-webapp-" + ax_ver_str
-openwebapp_src_zip_name = "openwebapp_src.zip"
-src_name = "axelor-v" + ax_ver_str + "-src"
-war_name = "axelor-v" + ax_ver_str + ".war"
 war_folder_name = "axelor-v" + ax_ver_str
+war_name = "axelor-v" + ax_ver_str + ".war"
 
-# Path to application.properties
+# Path to application.properties. The config
+# file exists in both source and WAR files, but
+# in different locations.
 app_prop_path = ""
+app_prop_src = os.path.join(
+    output_dir, src_folder_name, "src", "main", "resources", "application.properties"
+)
+app_prop_war = os.path.join(
+    output_dir, war_folder_name, "WEB-INF", "classes", "application.properties"
+)
+
+# Where the branding logo ends up also depends on whether the source code or
+# WAR file are being downloaded.
+brand_dest_path = ""
+brand_dest_src = os.path.join(
+    output_dir, src_folder_name, "src", "main", "webapp", "img", brand_filename
+)
+brand_dest_war = os.path.join(output_dir, war_folder_name, "img", brand_filename)
 
 if is_src:
+    app_prop_path = app_prop_src
+    brand_dest_path = brand_dest_src
     webapp_src = requests.get(openwebapp_src_url)
     with open(openwebapp_src_zip_name, "wb") as webapp_src_fp:
         for content in webapp_src.iter_content(chunk_size=40):
             webapp_src_fp.write(content)
+    # A seperate with statement is used so that the file is completly downloaded
+    # before extraction.
     with zipfile.ZipFile(openwebapp_src_zip_name, "r") as webapp_src_zip:
         webapp_src_zip.extractall()
     opensuite_src = requests.get(opensuite_src_url)
     with open(opensuite_src_zip_name, "wb") as opensuite_src_fp:
         for content in opensuite_src.iter_content(chunk_size=40):
             opensuite_src_fp.write(content)
+    # Extract opensuite zip file into the correct location inside
+    # openwebapp folder. After extraction, it will be in its own folder.
+    # Because of this, it should be renamed to what its supposed to be and
+    # any pre-existing folders with its expected name will be removed.
     with zipfile.ZipFile(opensuite_src_zip_name, "r") as opensuite_src_zip:
         opensuite_src_dest = os.path.join(
             openwebapp_src_folder_name, "modules", "axelor-open-suite"
@@ -103,26 +207,23 @@ if is_src:
         )
     os.remove(openwebapp_src_zip_name)
     os.remove(opensuite_src_zip_name)
-    os.rename(openwebapp_src_folder_name, src_name)
-    app_prop_path = os.path.join(
-        src_name, "src", "main", "resources", "application.properties"
-    )
-    if os.path.exists("branding_logo.png"):
-        brand_path = os.path.join(
-            src_name, "src", "main", "webapp", "img", "branding_logo.png"
-        )
-        shutil.copyfile("branding_logo.png", brand_path)
-        print("A personalized logo has been copied to " + brand_path + ".")
+    os.rename(openwebapp_src_folder_name, src_folder_name)
+    if use_brand_file:
+        shutil.copyfile(brand_file, brand_dest_path)
+        print(f"A personalized logo has been copied to {brand_dest_path}.")
         print(
-            'Please edit the "application.logo" entry in '
+            'Please edit the "application.logo" entry in'
             + app_prop_path
             + " to apply this new logo."
         )
         print('Typically, the entry will be set (by default) to "img/axelor.png".')
-        print('Simply change this to "img/branding_logo.png".')
+        print(f'Simply change this to "img/{brand_filename}".')
         print()
         time.sleep(PAUSE_SECONDS)
 else:
+    app_prop_path = app_prop_war
+    brand_dest_path = brand_dest_war
+
     try:
         war_file = requests.get(opensuite_war_url)
     except requests.exceptions.RequestException:
@@ -137,22 +238,24 @@ else:
         for member in war_zip.infolist():
             war_zip.extract(member, war_folder_name)
     os.remove(war_name)
-    app_prop_path = os.path.join(
-        war_folder_name, "WEB-INF", "classes", "application.properties"
-    )
-    if os.path.exists("branding_logo.png"):
-        brand_path = os.path.join(war_folder_name, "img", "branding_logo.png")
-        shutil.copyfile("branding_logo.png", brand_path)
-        print("A personalized logo has been copied to " + brand_path + ".")
+    if use_brand_file:
+        shutil.copyfile(brand_file, brand_dest_path)
+        print(f"A personalized logo has been copied to {brand_dest_path}.")
         print(
             'Please edit the "application.logo" entry in '
             + app_prop_path
             + " to apply this new logo."
         )
         print('Typically, the entry will be set (by default) to "img/axelor.png".')
-        print('Simply change this to "img/branding_logo.png".')
+        print(f'Simply change this to "img/{brand_filename}".')
         print()
         time.sleep(PAUSE_SECONDS)
+    if chownable:
+        posix_compat.chown_r(
+            os.path.join(output_dir, war_folder_name),
+            tomcat_tuple.uid,
+            tomcat_tuple.gid,
+        )
 
 print(
     "In order to get Axelor working, the "
