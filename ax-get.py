@@ -8,6 +8,7 @@ import os
 import requests
 import shutil
 import sys
+import tmp_name
 
 # So the instructions have a bit
 # of a breather between them.
@@ -21,6 +22,7 @@ DIR_ERROR_CODE = 1
 PERMISSION_ERROR_CODE = 2
 INVALID_TYPE_ERROR_CODE = 3
 INVALID_INPUT = 4
+DIR_ALREADY_EXISTS_ERROR_CODE = 5
 
 DEFAULT_BRANDING_FILE = "branding_logo.png"
 PAUSE_SECONDS = 3
@@ -116,6 +118,9 @@ if use_brand_file and os.name == "posix" and not os.access(brand_file, os.R_OK):
         print(f"Warning: Cannot read {brand_file}.", file=sys.stderr)
 brand_filename = os.path.basename(brand_file)
 
+# Prepare for temporary file names.
+tmp_name.init(output_dir)
+
 # The downloaded and extracted opensuite folder will
 # be placed inside a renamed openwebapp folder and that will
 # become the end result. The *zip_name variables are temporary
@@ -123,11 +128,11 @@ brand_filename = os.path.basename(brand_file)
 # variables are what the extracted folder is temporarily called.
 # The final folder name for the end result is src_folder_name.
 opensuite_src_url = default_opensuite_src_url + ax_ver_str + ".zip"
-opensuite_src_folder_name = "axelor-open-suite-" + ax_ver_str
-opensuite_src_zip_name = "opensuite_src.zip"
+opensuite_src_folder_name = tmp_name.get()
+opensuite_src_zip_name = tmp_name.get()
 openwebapp_src_url = default_openwebapp_src_url + ax_ver_str + ".zip"
-openwebapp_src_folder_name = "open-suite-webapp-" + ax_ver_str
-openwebapp_src_zip_name = "openwebapp_src.zip"
+openwebapp_src_folder_name = tmp_name.get()
+openwebapp_src_zip_name = tmp_name.get()
 src_folder_name = "axelor-v" + ax_ver_str + "-src"
 
 # Unlike when downloading the source code, both URLs aren't required
@@ -152,7 +157,7 @@ openwebapp_war_url = (
     + ".war"
 )
 war_folder_name = "axelor-v" + ax_ver_str
-war_name = "axelor-v" + ax_ver_str + ".war"
+war_name = tmp_name.get()
 
 # Path to application.properties. The config
 # file exists in both source and WAR files, but
@@ -174,6 +179,9 @@ brand_dest_src = os.path.join(
 brand_dest_war = os.path.join(output_dir, war_folder_name, "img", brand_filename)
 
 if is_src:
+    if os.path.exists(os.path.join(output_dir, src_folder_name)):
+        print(f"FE: {os.path.join(output_dir, src_folder_name)} already exists.")
+        sys.exit(DIR_ALREADY_EXISTS_ERROR_CODE)
     app_prop_path = app_prop_src
     brand_dest_path = brand_dest_src
     webapp_src = requests.get(openwebapp_src_url)
@@ -221,6 +229,9 @@ if is_src:
         print()
         time.sleep(PAUSE_SECONDS)
 else:
+    if os.path.exists(os.path.join(output_dir, war_folder_name)):
+        print(f"FE: {os.path.join(output_dir, war_folder_name)} already exists.")
+        sys.exit(DIR_ALREADY_EXISTS_ERROR_CODE)
     app_prop_path = app_prop_war
     brand_dest_path = brand_dest_war
 
