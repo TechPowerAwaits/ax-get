@@ -13,26 +13,19 @@ tmp_name_tracker = collections.deque()
 
 
 def init(target_dir=os.path.curdir):
-    """Ensures that no name is going to conflict with one inside the given directory."""
+    """Ensures that no name is going to conflict with one inside a given directory."""
     global tmp_name_tracker
     tmp_name_tracker.extend(os.listdir(target_dir))
-    if not tmp_name_tracker:
-        # At least one string should be in
-        # tmp_name_tracker, so it has to be
-        # one that can never exist on the file
-        # system.
-        tmp_name_tracker.append("$TEMP$")
 
 
 def get():
     """Returns a tmp_name."""
     global tmp_name_tracker
-    # Needs something that is in tmp_name_tracker
-    # so that the while loop will be entered at least
-    # once.
-    tmp_name = tmp_name_tracker[0]
-    while tmp_name in tmp_name_tracker:
-        with tempfile.NamedTemporaryFile() as tmp_fptr:
-            tmp_name = tmp_fptr.name
+    with tempfile.NamedTemporaryFile() as tmp_fptr:
+        tmp_name = os.path.basename(tmp_fptr.name)
+    # Get a new filename if name is already taken.
+    if tmp_name in tmp_name_tracker:
+        return get()
+    # Mark filename as being used.
     tmp_name_tracker.append(tmp_name)
     return tmp_name
