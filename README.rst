@@ -32,7 +32,7 @@ Then to run the actual script:
 
 ::
 
-    poetry run python ax-get.py
+    poetry run ax-get [--src] <major> <minor> <patch>
 
 License
 -------
