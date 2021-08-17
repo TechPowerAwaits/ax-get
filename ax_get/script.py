@@ -5,18 +5,19 @@ import argparse
 import os
 import requests
 import shutil
-import sys
 import time
+from warnings import warn
 
+from ax_get.exceptions import (
+    DirNotExistError,
+    DirNotAccessibleError,
+    NotFileError,
+    InvalidBrandFile,
+    FileAlreadyExists,
+)
 import ax_get.posix_compat as posix_compat
 import ax_get.smartzip as smartzip
 import ax_get.tmp_name as tmp_name
-
-DIR_ERROR_CODE = 1
-PERMISSION_ERROR_CODE = 2
-INVALID_TYPE_ERROR_CODE = 3
-INVALID_INPUT = 4
-DIR_ALREADY_EXISTS_ERROR_CODE = 5
 
 DEFAULT_BRANDING_FILE = "branding_logo.png"
 PAUSE_SECONDS = 3
@@ -98,23 +99,18 @@ def prep(is_src):
             if posix_compat.make_root():
                 chownable = True
             else:
-                print(
-                    "Warning: Downloaded Axelor content cannot be chowned.",
-                    file=sys.stderr,
-                )
+                warn("The downloaded Axelor content cannot be chowned")
 
     # Start dealing with output_dir before brand_file,
     # for the latter might be relative, and thus, depend
     # on the current location of output_dir.
     # Check if directory exists.
     if not os.access(output_dir, os.F_OK):
-        print(f"FE: Directory {output_dir} does not exist.", file=sys.stderr)
-        sys.exit(DIR_ERROR_CODE)
+        raise DirNotExistError(output_dir)
     # Check if the script needs to become root.
     if os.name == "posix" and not os.access(output_dir, os.R_OK ^ os.W_OK):
         if not posix_compat.make_root():
-            print(f"FE: No permissions to access {output_dir}.", file=sys.stderr)
-            sys.exit(PERMISSION_ERROR_CODE)
+            raise DirNotAccessibleError(output_dir)
     os.chdir(output_dir)
 
     if not os.path.isabs(brand_file):
@@ -124,18 +120,16 @@ def prep(is_src):
     if not os.path.isfile(brand_file):
         use_brand_file = False
         if os.path.exists(brand_file):
-            print(f"FE: The path {brand_file} is not a file.")
-            sys.exit(INVALID_TYPE_ERROR_CODE)
-        else:
-            # Only error out if it is a user defined
-            # brand_file that doesn't exist.
-            if not brand_file == os.path.abspath(DEFAULT_BRANDING_FILE):
-                print(f"FE: Given brand file of {brand_file} is invalid.")
-                sys.exit(INVALID_INPUT)
+            raise NotFileError(brand_file)
+        # Only error out if it is a user defined
+        # brand_file that doesn't exist.
+        if not brand_file == os.path.abspath(DEFAULT_BRANDING_FILE):
+            raise InvalidBrandFile(brand_file)
     # Try to get permission to copy (read) brand_file.
     if use_brand_file and os.name == "posix" and not os.access(brand_file, os.R_OK):
         if not posix_compat.make_root():
-            print(f"Warning: Cannot read {brand_file}.", file=sys.stderr)
+            warn(f"Cannot read {brand_file}")
+            use_brand_file = False
 
     # Prepare for temporary file names.
     tmp_name.init(output_dir)
@@ -180,9 +174,9 @@ def action_src(ax_ver_str, brand_filename):
         output_dir, folder_name, "src", "main", "webapp", "img", brand_filename
     )
 
-    if os.path.exists(os.path.join(output_dir, folder_name)):
-        print(f"FE: {os.path.join(output_dir, folder_name)} already exists.")
-        sys.exit(DIR_ALREADY_EXISTS_ERROR_CODE)
+    folder_loc = os.path.join(output_dir, folder_name)
+    if os.path.exists(folder_loc):
+        raise FileAlreadyExists(folder_loc)
     action_src_openwebapp(ax_ver_str, openwebapp_folder_name)
     action_src_opensuite(ax_ver_str, opensuite_folder_name)
 
@@ -261,9 +255,9 @@ def action_war(ax_ver_str, brand_filename):
     # WAR file are being downloaded.
     brand_dest_path = os.path.join(output_dir, folder_name, "img", brand_filename)
 
-    if os.path.exists(os.path.join(output_dir, folder_name)):
-        print(f"FE: {os.path.join(output_dir, folder_name)} already exists.")
-        sys.exit(DIR_ALREADY_EXISTS_ERROR_CODE)
+    folder_loc = os.path.join(output_dir, folder_name)
+    if os.path.exists(folder_loc):
+        raise FileAlreadyExists(folder_loc)
 
     try:
         war_file = requests.get(opensuite_url)
