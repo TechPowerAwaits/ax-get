@@ -7,9 +7,9 @@ import requests
 import shutil
 import sys
 import time
-import zipfile
 
 import ax_get.posix_compat as posix_compat
+import ax_get.smartzip as smartzip
 import ax_get.tmp_name as tmp_name
 
 DIR_ERROR_CODE = 1
@@ -206,9 +206,8 @@ def action_src_openwebapp(ax_ver_str, folder_name):
             webapp_fptr.write(content)
     # A separate with statement is used so that the file is completly downloaded
     # before extraction.
-    with zipfile.ZipFile(zip_name, "r") as webapp_zip:
-        for member in webapp_zip.infolist():
-            webapp_zip.extract(member, folder_name)
+    with smartzip.SmartZip(zip_name, "r") as webapp_zip:
+        webapp_zip.extractall(folder_name, remove_parent=True)
     os.remove(zip_name)
 
 
@@ -221,9 +220,8 @@ def action_src_opensuite(ax_ver_str, folder_name):
         for content in opensuite_src.iter_content(chunk_size=40):
             opensuite_fptr.write(content)
 
-    with zipfile.ZipFile(zip_name, "r") as opensuite_zip:
-        for member in opensuite_zip.infolist():
-            opensuite_zip.extract(member, folder_name)
+    with smartzip.SmartZip(zip_name, "r") as opensuite_zip:
+        opensuite_zip.extractall(folder_name, remove_parent=True)
     os.remove(zip_name)
 
 
@@ -274,12 +272,11 @@ def action_war(ax_ver_str, brand_filename):
     with open(war_name, "wb") as war_fptr:
         for content in war_file.iter_content(chunk_size=40):
             war_fptr.write(content)
-    with zipfile.ZipFile(war_name, "r") as war_zip:
+    with smartzip.SmartZip(war_name, "r") as war_zip:
         if os.path.exists(folder_name):
             shutil.rmtree(folder_name)
         os.mkdir(folder_name)
-        for member in war_zip.infolist():
-            war_zip.extract(member, folder_name)
+        war_zip.extractall(folder_name, remove_parent=True)
     os.remove(war_name)
     if chownable:
         tomcat_tuple = posix_compat.get_tomcat_info()
