@@ -1,6 +1,7 @@
 axelor-*
+dist/
 *.pyc
+__pycache__
 *.pyo
 *.war
 *.zip
-__pycache__
