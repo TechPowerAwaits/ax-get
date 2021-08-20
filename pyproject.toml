@@ -4,6 +4,17 @@ version = "1.0.0"
 description = "Grabs a copy of Axelor ERP source code and binaries."
 authors = ["Richard J. <techpowerawaits@outlook.com>"]
 license = "0BSD"
+readme = "README.rst"
+repository = "https://github.com/TechPowerAwaits/ax-get"
+documentation = "https://github.com/TechPowerAwaits/ax-get/blob/main/README.rst"
+keywords = ["downloader", "axelor"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Intended Audience :: Information Technology",
+    "Operating System :: OS Independent",
+    "Topic :: Utilities"
+]
 
 [tool.poetry.dependencies]
 python = "^3.6"
