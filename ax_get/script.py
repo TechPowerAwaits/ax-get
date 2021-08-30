@@ -41,15 +41,13 @@ default_openwebapp_war_url = (
 default_war_basename = "axelor-erp-v"
 
 # These variables need to be global in scope.
-brand_file = ""
-chownable = False
+brand_path = ""
 output_dir = ""
-use_brand_file = True
+tomcat_id_tuple = posix_compat.get_tomcat_info()
 
 
 def start():
-    global brand_file
-    global chownable
+    global brand_path
     global output_dir
     parser_dict = parse_args()
     # Deal with the version numbers.
@@ -59,7 +57,7 @@ def start():
     patch_ver = parser_dict["patch"]
     ax_ver_str = major_ver + "." + minor_ver + "." + patch_ver
     # Deal with the filepaths.
-    brand_file = parser_dict["brand_file"]
+    brand_path = parser_dict["brand_file"]
     output_dir = parser_dict["out"]
     # Check for valid filepaths and proper permissions.
     prep(is_src)
@@ -85,23 +83,19 @@ def parse_args():
 
 
 def prep(is_src):
-    global brand_file
-    global chownable
+    global brand_path
     global output_dir
-    global use_brand_file
+    global tomcat_id_tuple
 
     # On POSIX-like platforms, the WAR file content should be
     # chowned for the tomcat user and group. Source code files
     # shouldn't be chowned.
-    tomcat_tuple = posix_compat.get_tomcat_info()
-    if os.name == "posix" and not is_src:
-        if tomcat_tuple.name is not None:
-            if posix_compat.make_root():
-                chownable = True
-            else:
-                warn("The downloaded Axelor content cannot be chowned")
+    if tomcat_id_tuple and not is_src:
+        if not posix_compat.make_root():
+            warn("The downloaded Axelor content cannot be chowned")
+            tomcat_id_tuple = ()
 
-    # Start dealing with output_dir before brand_file,
+    # Start dealing with output_dir before brand_path,
     # for the latter might be relative, and thus, depend
     # on the current location of output_dir.
     # Check if directory exists.
@@ -113,23 +107,25 @@ def prep(is_src):
             raise DirNotAccessibleError(output_dir)
     os.chdir(output_dir)
 
-    if not os.path.isabs(brand_file):
-        brand_file = os.path.abspath(brand_file)
-    # Check if brand_file exists and is of a valid type
-    # (not a directory or symlink).
-    if not os.path.isfile(brand_file):
-        use_brand_file = False
-        if os.path.exists(brand_file):
-            raise NotFileError(brand_file)
+    # Check if brand_path exists and is of a valid type
+    # (not a directory or symlink). Only error out if it
+    # is a user defined brand_path that doesn't exist.
+    if not os.path.isfile(brand_path):
         # Only error out if it is a user defined
-        # brand_file that doesn't exist.
-        if not brand_file == os.path.abspath(DEFAULT_BRANDING_FILE):
-            raise InvalidBrandFile(brand_file)
-    # Try to get permission to copy (read) brand_file.
-    if use_brand_file and os.name == "posix" and not os.access(brand_file, os.R_OK):
+        # brand_path that doesn't exist or it
+        # exists, but is not a file.
+        if brand_path != DEFAULT_BRANDING_FILE:
+            if os.path.exists(brand_path):
+                raise NotFileError(brand_path)
+            raise InvalidBrandFile(brand_path)
+        # Set brand_path to empty string so boolean
+        # operation will return False.
+        brand_path = ""
+    # Try to get permission to copy (read) brand_path.
+    if brand_path and os.name == "posix" and not os.access(brand_path, os.R_OK):
         if not posix_compat.make_root():
-            warn(f"Cannot read {brand_file}")
-            use_brand_file = False
+            warn(f"Cannot read {brand_path}")
+            brand_path = ""
 
     # Prepare for temporary file names.
     tmp_name.init(output_dir)
@@ -137,7 +133,7 @@ def prep(is_src):
 
 def action(ax_ver_str, is_src):
     # Used by both functions.
-    brand_filename = os.path.basename(brand_file)
+    brand_filename = os.path.basename(brand_path)
 
     if is_src:
         action_src(ax_ver_str, brand_filename)
@@ -184,8 +180,8 @@ def action_src(ax_ver_str, brand_filename):
     opensuite_dest = os.path.join(folder_name, "modules", "axelor-open-suite")
     os.rename(opensuite_folder_name, opensuite_dest)
 
-    if use_brand_file:
-        shutil.copyfile(brand_file, brand_dest_path)
+    if brand_path:
+        shutil.copyfile(brand_path, brand_dest_path)
 
     output_info(ax_ver_str, folder_name, app_prop_path, brand_dest_path, is_src=True)
 
@@ -272,23 +268,22 @@ def action_war(ax_ver_str, brand_filename):
         os.mkdir(folder_name)
         war_zip.extractall(folder_name, remove_parent=True)
     os.remove(war_name)
-    if chownable:
-        tomcat_tuple = posix_compat.get_tomcat_info()
+    if tomcat_id_tuple:
         posix_compat.chown_r(
             os.path.join(output_dir, folder_name),
-            tomcat_tuple.uid,
-            tomcat_tuple.gid,
+            tomcat_id_tuple.uid,
+            tomcat_id_tuple.gid,
         )
 
-    if use_brand_file:
-        shutil.copyfile(brand_file, brand_dest_path)
+    if brand_path:
+        shutil.copyfile(brand_path, brand_dest_path)
 
     output_info(ax_ver_str, folder_name, app_prop_path, brand_dest_path, is_src=False)
 
 
 def output_info(ax_ver_str, folder_name, app_prop_path, brand_dest_path, is_src):
-    if use_brand_file:
-        brand_filename = os.path.basename(brand_file)
+    if brand_path:
+        brand_filename = os.path.basename(brand_dest_path)
         print(f"A personalized logo has been copied to {brand_dest_path}.")
         print(
             'Please edit the "application.logo" entry in'
