@@ -46,7 +46,6 @@ def make_root():
 
 
 def get_tomcat_info():
-    tomcat_name = "tomcat"
     tomcat_uid = -1
     tomcat_gid = -1
     if os.name == "posix":
@@ -55,8 +54,12 @@ def get_tomcat_info():
             tomcat_uid = tomcat_info[2]
             tomcat_gid = tomcat_info[3]
         except KeyError:
-            tomcat_name = None
-    return UserTuple(tomcat_name, tomcat_uid, tomcat_gid)
+            pass
+    if tomcat_uid == -1 or tomcat_gid == -1:
+        # Returns an empty tuple if tomcat values
+        # cannot be found.
+        return ()
+    return UserTuple("tomcat", tomcat_uid, tomcat_gid)
 
 
 # A recursive chown function.
